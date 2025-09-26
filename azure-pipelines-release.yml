@@ -1,0 +1,105 @@
+trigger: none
+pr: none
+
+resources:
+  pipelines:
+  - pipeline: build
+    source: tailspin-spacegame-web-build  # Replace with your build pipeline name
+    trigger:
+      branches:
+        include:
+        - main
+        - build-pipeline
+
+stages:
+- stage: 'Deploy_Dev'
+  displayName: 'Deploy to Development'
+  jobs:
+  - deployment: Deploy
+    displayName: 'Deploy job'
+    pool:
+      vmImage: ubuntu-latest
+    environment: 'dev'
+    variables:
+    - group: 'dev-variables'  # Create this variable group in Azure DevOps
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - download: build
+            artifact: drop
+
+          - task: AzureResourceManagerTemplateDeployment@3
+            displayName: 'Deploy ARM Template'
+            inputs:
+              deploymentScope: 'Resource Group'
+              azureResourceManagerConnection: '$(serviceConnectionName)'  # Your service connection
+              subscriptionId: '$(subscriptionId)'
+              action: 'Create Or Update Resource Group'
+              resourceGroupName: '$(resourceGroupName)'
+              location: '$(location)'
+              templateLocation: 'Linked artifact'
+              csmFile: '$(Pipeline.Workspace)/build/drop/infra/main.json'
+              csmParametersFile: '$(Pipeline.Workspace)/build/drop/infra/main.parameters.json'
+              overrideParameters: |
+                -appName "$(appName)" 
+                -environment "$(environment)"
+                -skuName "$(skuName)"
+              deploymentMode: 'Incremental'
+              deploymentName: 'DeployPipelineTemplate'
+
+          - task: AzureWebApp@1
+            displayName: 'Deploy to Azure App Service'
+            inputs:
+              azureSubscription: '$(serviceConnectionName)'
+              appType: 'webAppLinux'
+              appName: '$(appName)-$(environment)-app'
+              package: '$(Pipeline.Workspace)/build/drop/Release/*.zip'
+              runtimeStack: 'DOTNETCORE|8.0'
+
+- stage: 'Deploy_Prod'
+  displayName: 'Deploy to Production'
+  dependsOn: Deploy_Dev
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+  jobs:
+  - deployment: Deploy
+    displayName: 'Deploy job'
+    pool:
+      vmImage: ubuntu-latest
+    environment: 'prod'
+    variables:
+    - group: 'prod-variables'  # Create this variable group in Azure DevOps
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - download: build
+            artifact: drop
+
+          - task: AzureResourceManagerTemplateDeployment@3
+            displayName: 'Deploy ARM Template'
+            inputs:
+              deploymentScope: 'Resource Group'
+              azureResourceManagerConnection: '$(serviceConnectionName)'
+              subscriptionId: '$(subscriptionId)'
+              action: 'Create Or Update Resource Group'
+              resourceGroupName: '$(resourceGroupName)'
+              location: '$(location)'
+              templateLocation: 'Linked artifact'
+              csmFile: '$(Pipeline.Workspace)/build/drop/infra/main.json'
+              csmParametersFile: '$(Pipeline.Workspace)/build/drop/infra/main.parameters.json'
+              overrideParameters: |
+                -appName "$(appName)" 
+                -environment "prod"
+                -skuName "$(skuName)"
+              deploymentMode: 'Incremental'
+              deploymentName: 'DeployPipelineTemplate'
+
+          - task: AzureWebApp@1
+            displayName: 'Deploy to Azure App Service'
+            inputs:
+              azureSubscription: '$(serviceConnectionName)'
+              appType: 'webAppLinux'
+              appName: '$(appName)-prod-app'
+              package: '$(Pipeline.Workspace)/build/drop/Release/*.zip'
+              runtimeStack: 'DOTNETCORE|8.0'
