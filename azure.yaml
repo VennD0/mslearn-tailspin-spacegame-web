@@ -1,0 +1,30 @@
+# Azure Developer CLI configuration file
+# https://learn.microsoft.com/en-us/azure/developer/azure-developer-cli/azd-schema
+
+name: tailspin-spacegame-web
+metadata:
+  template: tailspin-spacegame-web@0.0.1-beta
+  
+# Define the services in your application
+services:
+  web:
+    project: ./Tailspin.SpaceGame.Web
+    language: dotnet
+    host: appservice
+    
+# Infrastructure configuration
+infra:
+  provider: bicep
+  path: ./infra
+  
+# Pipeline configuration
+pipeline:
+  provider: azdo
+  
+# Environment variables
+# You can override these in .azure/<env-name>/.env files
+env:
+  # Application settings
+  ASPNETCORE_ENVIRONMENT:
+    value: Production
+  # Application Insights will be configured automatically through Bicep outputs
