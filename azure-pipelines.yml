@@ -1,16 +1,12 @@
-# Multi-stage Pipeline with Deployment Slots Demo
-# Stages: Build → UAT → Production Staging → Slot Swap
+# Simplified Multi-stage Pipeline following Microsoft Learn pattern
+# Stages: Build → Dev (UAT) → Production
 
 trigger:
 - main
 
 variables:
   buildConfiguration: 'Release'
-  # Use a completely new service connection name
   azureServiceConnection: 'tailspin-demo-connection'
-  uatWebAppName: 'tailspin-uat-webapp'
-  prodWebAppName: 'tailspin-prod-webapp'
-  resourceGroupName: 'rg-tailspin-demo'
 
 stages:
 - stage: 'Build'
@@ -47,20 +43,20 @@ stages:
       inputs:
         command: 'publish'
         projects: 'Tailspin.SpaceGame.Web/Tailspin.SpaceGame.Web.csproj'
-        arguments: '--no-build --configuration $(buildConfiguration) --output $(Build.ArtifactStagingDirectory)'
+        arguments: '--no-build --configuration $(buildConfiguration) --output $(Build.ArtifactStagingDirectory)/$(buildConfiguration)'
         zipAfterPublish: true
 
     - publish: '$(Build.ArtifactStagingDirectory)'
       artifact: drop
 
-- stage: DeployUAT
-  displayName: 'Deploy to UAT'
+- stage: 'Dev'
+  displayName: 'Deploy to the dev environment'
   dependsOn: Build
   jobs:
-  - deployment: DeployUAT
-    environment: 'UAT'
+  - deployment: Deploy
     pool:
       vmImage: 'ubuntu-latest'
+    environment: UAT
     strategy:
       runOnce:
         deploy:
@@ -68,79 +64,9 @@ stages:
           - download: current
             artifact: drop
           - task: AzureWebApp@1
-            displayName: 'Deploy to UAT'
+            displayName: 'Azure App Service Deploy: UAT Website'
             inputs:
               azureSubscription: '$(azureServiceConnection)'
               appType: 'webApp'
-              appName: '$(uatWebAppName)'
-              package: '$(Pipeline.Workspace)/drop/*.zip'
-
-- stage: DeployProdStaging
-  displayName: 'Deploy to Prod Staging Slot'
-  dependsOn: DeployUAT
-  jobs:
-  - job: ManualValidationUAT
-    displayName: 'Manual Validation - UAT Testing Complete'
-    pool: server
-    steps:
-    - task: ManualValidation@0
-      displayName: 'Approve UAT Testing Results'
-      inputs:
-        notifyUsers: 'venn.d.dela.pena@accenture.com'
-        instructions: 'Please validate UAT deployment at: https://tailspin-uat-webapp.azurewebsites.net'
-        onTimeout: 'reject'
-  
-  - deployment: DeployProdStaging
-    dependsOn: ManualValidationUAT
-    environment: 'Production-Staging'
-    pool:
-      vmImage: 'ubuntu-latest'
-    strategy:
-      runOnce:
-        deploy:
-          steps:
-          - download: current
-            artifact: drop
-          - task: AzureWebApp@1
-            displayName: 'Deploy to Staging Slot'
-            inputs:
-              azureSubscription: '$(azureServiceConnection)'
-              appType: 'webApp'
-              appName: '$(prodWebAppName)'
-              deployToSlotOrASE: true
-              resourceGroupName: '$(resourceGroupName)'
-              slotName: 'staging'
-              package: '$(Pipeline.Workspace)/drop/*.zip'
-
-- stage: SwapToProduction
-  displayName: 'Swap to Production'
-  dependsOn: DeployProdStaging
-  jobs:
-  - job: ManualValidationStaging
-    displayName: 'Manual Validation - Staging Testing Complete'
-    pool: server
-    steps:
-    - task: ManualValidation@0
-      displayName: 'Approve Production Slot Swap'
-      inputs:
-        notifyUsers: 'venn.d.dela.pena@accenture.com'
-        instructions: 'Please validate staging deployment at: https://tailspin-prod-webapp-staging.azurewebsites.net'
-        onTimeout: 'reject'
-  
-  - deployment: SwapSlots
-    dependsOn: ManualValidationStaging
-    environment: 'Production'
-    pool:
-      vmImage: 'ubuntu-latest'
-    strategy:
-      runOnce:
-        deploy:
-          steps:
-          - task: AzureAppServiceManage@0
-            displayName: 'Swap Staging to Production'
-            inputs:
-              azureSubscription: '$(azureServiceConnection)'
-              action: 'Swap Slots'
-              webAppName: '$(prodWebAppName)'
-              resourceGroupName: '$(resourceGroupName)'
-              sourceSlot: 'staging'
+              appName: 'tailspin-uat-webapp'
+              package: '$(Pipeline.Workspace)/drop/$(buildConfiguration)/*.zip'
