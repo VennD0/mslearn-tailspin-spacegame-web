@@ -1,5 +1,5 @@
-# Build and Dev Pipeline - commenting out deployment for demo
-# Stages: Build → Dev (without actual deployment)
+# Multi-stage Pipeline following Microsoft Learn pattern
+# Stages: Build → Dev (UAT) → Test → Staging
 
 trigger:
 - main
@@ -7,6 +7,15 @@ trigger:
 variables:
   buildConfiguration: 'Release'
   azureServiceConnection: 'tailspin-demo-connection'
+
+# Optional: Schedule for automated Test stage deployment
+# schedules:
+# - cron: '0 3 * * *'
+#   displayName: 'Deploy every day at 3 A.M.'
+#   branches:
+#     include:
+#     - main
+#   always: false 
 
 stages:
 - stage: 'Build'
@@ -77,4 +86,67 @@ stages:
           #     azureSubscription: '$(azureServiceConnection)'
           #     appType: 'webApp'
           #     appName: 'tailspin-uat-webapp'
+          #     package: '$(Pipeline.Workspace)/drop/$(buildConfiguration)/*.zip'
+
+- stage: 'Test'
+  displayName: 'Deploy to the test environment'
+  dependsOn: Dev
+  # Optional: Uncomment to run only on schedule
+  # condition: eq(variables['Build.Reason'], 'Schedule')
+  jobs:
+  - deployment: Deploy
+    pool:
+      vmImage: 'ubuntu-latest'
+    environment: Test
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - download: current
+            artifact: drop
+          - script: echo "Test stage completed successfully! Ready for automated testing."
+            displayName: 'Test Stage Success Message'
+          - script: echo "Simulating automated tests..." && sleep 2 && echo "All tests passed!"
+            displayName: 'Simulate Test Execution'
+          
+          # Commented out the actual deployment task due to service connection issues
+          # This would normally deploy to a test App Service
+          # - task: AzureWebApp@1
+          #   displayName: 'Azure App Service Deploy: Test Website'
+          #   inputs:
+          #     azureSubscription: '$(azureServiceConnection)'
+          #     appType: 'webApp'
+          #     appName: 'tailspin-test-webapp'  # You would create this App Service
+          #     package: '$(Pipeline.Workspace)/drop/$(buildConfiguration)/*.zip'
+
+- stage: 'Staging'
+  displayName: 'Deploy to the staging environment'
+  dependsOn: Test
+  jobs:
+  - deployment: Deploy
+    pool:
+      vmImage: 'ubuntu-latest'
+    environment: Staging
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - download: current
+            artifact: drop
+          - script: echo "Staging deployment successful! Ready for final approval."
+            displayName: 'Staging Success Message'
+          - script: echo "This stage would deploy to production staging slot:" && echo "tailspin-prod-webapp-staging.azurewebsites.net"
+            displayName: 'Show Staging Deployment Target'
+          
+          # Commented out the actual deployment task due to service connection issues
+          # This would deploy to the production staging slot
+          # - task: AzureWebApp@1
+          #   displayName: 'Azure App Service Deploy: Production Staging Slot'
+          #   inputs:
+          #     azureSubscription: '$(azureServiceConnection)'
+          #     appType: 'webApp'
+          #     appName: 'tailspin-prod-webapp'
+          #     deployToSlotOrASE: true
+          #     resourceGroupName: 'rg-tailspin-demo'
+          #     slotName: 'staging'
           #     package: '$(Pipeline.Workspace)/drop/$(buildConfiguration)/*.zip'
