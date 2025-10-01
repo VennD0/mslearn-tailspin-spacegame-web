@@ -6,8 +6,8 @@ trigger:
 
 variables:
   buildConfiguration: 'Release'
-  # Update this with your actual service connection name from Azure DevOps
-  azureServiceConnection: 'Azure Resource Manager - Visual Studio Enterprise Subscription'
+  # Service connection name matches what's shown in Azure DevOps
+  azureServiceConnection: 'azure-service-connection'
   uatWebAppName: 'tailspin-uat-webapp'
   prodWebAppName: 'tailspin-prod-webapp'
   resourceGroupName: 'rg-tailspin-demo'
