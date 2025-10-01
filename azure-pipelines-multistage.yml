@@ -1,4 +1,4 @@
-# Simple Multi-stage Pipeline with Deployment Slots Demo
+# Multi-stage Pipeline with Deployment Slots Demo
 # Stages: Build → UAT → Production Staging → Slot Swap
 
 trigger:
@@ -6,43 +6,51 @@ trigger:
 
 variables:
   buildConfiguration: 'Release'
-  azureServiceConnection: 'azure-service-connection' # Update with your service connection name
-  
-  # Update these after creating your App Services
+  azureServiceConnection: 'azure-service-connection'
   uatWebAppName: 'tailspin-uat-webapp'
   prodWebAppName: 'tailspin-prod-webapp'
   resourceGroupName: 'rg-tailspin-demo'
 
 stages:
-- stage: Build
-  displayName: 'Build App'
-  jobs:
-  - job: Build
+- stage: 'Build'
+  displayName: 'Build the web application'
+  jobs: 
+  - job: 'Build'
+    displayName: 'Build job'
     pool:
       vmImage: 'ubuntu-latest'
+    variables:
+      dotnetSdkVersion: '8.x'
     steps:
     - task: UseDotNet@2
+      displayName: 'Use .NET SDK $(dotnetSdkVersion)'
       inputs:
         packageType: 'sdk'
-        version: '8.0.x'
-    
+        version: '$(dotnetSdkVersion)'
+
     - task: DotNetCoreCLI@2
-      displayName: 'Build'
+      displayName: 'Restore project dependencies'
+      inputs:
+        command: 'restore'
+        projects: 'Tailspin.SpaceGame.Web/Tailspin.SpaceGame.Web.csproj'
+
+    - task: DotNetCoreCLI@2
+      displayName: 'Build the project - $(buildConfiguration)'
       inputs:
         command: 'build'
+        arguments: '--no-restore --configuration $(buildConfiguration)'
         projects: 'Tailspin.SpaceGame.Web/Tailspin.SpaceGame.Web.csproj'
-        arguments: '--configuration $(buildConfiguration)'
-    
+
     - task: DotNetCoreCLI@2
-      displayName: 'Publish'
+      displayName: 'Publish the project - $(buildConfiguration)'
       inputs:
         command: 'publish'
         projects: 'Tailspin.SpaceGame.Web/Tailspin.SpaceGame.Web.csproj'
-        arguments: '--configuration $(buildConfiguration) --output $(Build.ArtifactStagingDirectory)'
+        arguments: '--no-build --configuration $(buildConfiguration) --output $(Build.ArtifactStagingDirectory)'
         zipAfterPublish: true
-    
-    - publish: $(Build.ArtifactStagingDirectory)
-      artifact: webapp
+
+    - publish: '$(Build.ArtifactStagingDirectory)'
+      artifact: drop
 
 - stage: DeployUAT
   displayName: 'Deploy to UAT'
@@ -56,13 +64,15 @@ stages:
       runOnce:
         deploy:
           steps:
+          - download: current
+            artifact: drop
           - task: AzureWebApp@1
             displayName: 'Deploy to UAT'
             inputs:
               azureSubscription: '$(azureServiceConnection)'
               appType: 'webApp'
               appName: '$(uatWebAppName)'
-              package: '$(Pipeline.Workspace)/webapp/Tailspin.SpaceGame.Web.zip'
+              package: '$(Pipeline.Workspace)/drop/*.zip'
 
 - stage: DeployProdStaging
   displayName: 'Deploy to Prod Staging Slot'
@@ -88,6 +98,8 @@ stages:
       runOnce:
         deploy:
           steps:
+          - download: current
+            artifact: drop
           - task: AzureWebApp@1
             displayName: 'Deploy to Staging Slot'
             inputs:
@@ -97,7 +109,7 @@ stages:
               deployToSlotOrASE: true
               resourceGroupName: '$(resourceGroupName)'
               slotName: 'staging'
-              package: '$(Pipeline.Workspace)/webapp/Tailspin.SpaceGame.Web.zip'
+              package: '$(Pipeline.Workspace)/drop/*.zip'
 
 - stage: SwapToProduction
   displayName: 'Swap to Production'
