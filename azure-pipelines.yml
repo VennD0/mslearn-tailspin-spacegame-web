@@ -1,152 +1,60 @@
-# Multi-stage Pipeline following Microsoft Learn pattern
-# Stages: Build → Dev (UAT) → Test → Staging
+# UseCase1: Classic ARM DevOps Pipeline
+# Simple Build -> Deploy pattern (no multi-staging)
 
 trigger:
 - main
 
 variables:
   buildConfiguration: 'Release'
-  azureServiceConnection: 'tailspin-demo-connection'
+  azureServiceConnection: 'azure-service-connection'
+  webAppName: 'tailspin-classic-webapp'
 
-# Optional: Schedule for automated Test stage deployment
-# schedules:
-# - cron: '0 3 * * *'
-#   displayName: 'Deploy every day at 3 A.M.'
-#   branches:
-#     include:
-#     - main
-#   always: false 
-
-stages:
-- stage: 'Build'
+jobs:
+- job: 'Build'
   displayName: 'Build the web application'
-  jobs: 
-  - job: 'Build'
-    displayName: 'Build job'
-    pool:
-      vmImage: 'ubuntu-latest'
-    variables:
-      dotnetSdkVersion: '8.x'
-    steps:
-    - task: UseDotNet@2
-      displayName: 'Use .NET SDK $(dotnetSdkVersion)'
-      inputs:
-        packageType: 'sdk'
-        version: '$(dotnetSdkVersion)'
+  pool:
+    vmImage: 'ubuntu-latest'
+  variables:
+    dotnetSdkVersion: '8.x'
+  steps:
+  - task: UseDotNet@2
+    displayName: 'Use .NET SDK $(dotnetSdkVersion)'
+    inputs:
+      packageType: 'sdk'
+      version: '$(dotnetSdkVersion)'
 
-    - task: DotNetCoreCLI@2
-      displayName: 'Restore project dependencies'
-      inputs:
-        command: 'restore'
-        projects: 'Tailspin.SpaceGame.Web/Tailspin.SpaceGame.Web.csproj'
+  - task: DotNetCoreCLI@2
+    displayName: 'Restore project dependencies'
+    inputs:
+      command: 'restore'
+      projects: 'Tailspin.SpaceGame.Web/Tailspin.SpaceGame.Web.csproj'
 
-    - task: DotNetCoreCLI@2
-      displayName: 'Build the project - $(buildConfiguration)'
-      inputs:
-        command: 'build'
-        arguments: '--no-restore --configuration $(buildConfiguration)'
-        projects: 'Tailspin.SpaceGame.Web/Tailspin.SpaceGame.Web.csproj'
+  - task: DotNetCoreCLI@2
+    displayName: 'Build the project - $(buildConfiguration)'
+    inputs:
+      command: 'build'
+      arguments: '--no-restore --configuration $(buildConfiguration)'
+      projects: 'Tailspin.SpaceGame.Web/Tailspin.SpaceGame.Web.csproj'
 
-    - task: DotNetCoreCLI@2
-      displayName: 'Publish the project - $(buildConfiguration)'
-      inputs:
-        command: 'publish'
-        projects: 'Tailspin.SpaceGame.Web/Tailspin.SpaceGame.Web.csproj'
-        arguments: '--no-build --configuration $(buildConfiguration) --output $(Build.ArtifactStagingDirectory)/$(buildConfiguration)'
-        zipAfterPublish: true
+  - task: DotNetCoreCLI@2
+    displayName: 'Publish the project - $(buildConfiguration)'
+    inputs:
+      command: 'publish'
+      projects: 'Tailspin.SpaceGame.Web/Tailspin.SpaceGame.Web.csproj'
+      arguments: '--no-build --configuration $(buildConfiguration) --output $(Build.ArtifactStagingDirectory)/$(buildConfiguration)'
+      zipAfterPublish: true
 
-    - publish: '$(Build.ArtifactStagingDirectory)'
-      artifact: drop
-      displayName: 'Publish build artifacts'
+  - task: AzureWebApp@1
+    displayName: 'Deploy to Azure Web App'
+    inputs:
+      azureSubscription: '$(azureServiceConnection)'
+      appType: 'webApp'
+      appName: '$(webAppName)'
+      package: '$(Build.ArtifactStagingDirectory)/$(buildConfiguration)/*.zip'
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
 
-- stage: 'Dev'
-  displayName: 'Deploy to the dev environment'
-  dependsOn: Build
-  jobs:
-  - deployment: Deploy
-    pool:
-      vmImage: 'ubuntu-latest'
-    environment: UAT
-    strategy:
-      runOnce:
-        deploy:
-          steps:
-          - download: current
-            artifact: drop
-          - script: echo "Dev stage completed successfully! Artifacts downloaded and ready for deployment."
-            displayName: 'Dev Stage Success Message'
-          - script: echo "Build artifacts location:" && ls -la $(Pipeline.Workspace)/drop/
-            displayName: 'Show build artifacts'
-          
-          # Commented out the actual deployment task due to service connection issues
-          # This would normally deploy to tailspin-uat-webapp.azurewebsites.net
-          # - task: AzureWebApp@1
-          #   displayName: 'Azure App Service Deploy: UAT Website'
-          #   inputs:
-          #     azureSubscription: '$(azureServiceConnection)'
-          #     appType: 'webApp'
-          #     appName: 'tailspin-uat-webapp'
-          #     package: '$(Pipeline.Workspace)/drop/$(buildConfiguration)/*.zip'
-
-- stage: 'Test'
-  displayName: 'Deploy to the test environment'
-  dependsOn: Dev
-  # Optional: Uncomment to run only on schedule
-  # condition: eq(variables['Build.Reason'], 'Schedule')
-  jobs:
-  - deployment: Deploy
-    pool:
-      vmImage: 'ubuntu-latest'
-    environment: Test
-    strategy:
-      runOnce:
-        deploy:
-          steps:
-          - download: current
-            artifact: drop
-          - script: echo "Test stage completed successfully! Ready for automated testing."
-            displayName: 'Test Stage Success Message'
-          - script: echo "Simulating automated tests..." && sleep 2 && echo "All tests passed!"
-            displayName: 'Simulate Test Execution'
-          
-          # Commented out the actual deployment task due to service connection issues
-          # This would normally deploy to a test App Service
-          # - task: AzureWebApp@1
-          #   displayName: 'Azure App Service Deploy: Test Website'
-          #   inputs:
-          #     azureSubscription: '$(azureServiceConnection)'
-          #     appType: 'webApp'
-          #     appName: 'tailspin-test-webapp'  # You would create this App Service
-          #     package: '$(Pipeline.Workspace)/drop/$(buildConfiguration)/*.zip'
-
-- stage: 'Staging'
-  displayName: 'Deploy to the staging environment'
-  dependsOn: Test
-  jobs:
-  - deployment: Deploy
-    pool:
-      vmImage: 'ubuntu-latest'
-    environment: Staging
-    strategy:
-      runOnce:
-        deploy:
-          steps:
-          - download: current
-            artifact: drop
-          - script: echo "Staging deployment successful! Ready for final approval."
-            displayName: 'Staging Success Message'
-          - script: echo "This stage would deploy to production staging slot:" && echo "tailspin-prod-webapp-staging.azurewebsites.net"
-            displayName: 'Show Staging Deployment Target'
-          
-          # Commented out the actual deployment task due to service connection issues
-          # This would deploy to the production staging slot
-          # - task: AzureWebApp@1
-          #   displayName: 'Azure App Service Deploy: Production Staging Slot'
-          #   inputs:
-          #     azureSubscription: '$(azureServiceConnection)'
-          #     appType: 'webApp'
-          #     appName: 'tailspin-prod-webapp'
-          #     deployToSlotOrASE: true
-          #     resourceGroupName: 'rg-tailspin-demo'
-          #     slotName: 'staging'
-          #     package: '$(Pipeline.Workspace)/drop/$(buildConfiguration)/*.zip'
+  - task: PublishBuildArtifacts@1
+    displayName: 'Publish Artifacts'
+    inputs:
+      pathToPublish: '$(Build.ArtifactStagingDirectory)'
+      artifactName: 'drop'
