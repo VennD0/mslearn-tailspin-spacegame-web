@@ -1,13 +1,11 @@
 # UseCase1: Classic ARM DevOps Pipeline
-# Simple Build -> Deploy pattern (no multi-staging)
+# Simple Build -> Publish Artifacts pattern (no Azure deployment)
 
 trigger:
 - main
 
 variables:
   buildConfiguration: 'Release'
-  azureServiceConnection: 'azure-service-connection'
-  webAppName: 'tailspin-classic-webapp'
 
 jobs:
 - job: 'Build'
@@ -43,15 +41,6 @@ jobs:
       projects: 'Tailspin.SpaceGame.Web/Tailspin.SpaceGame.Web.csproj'
       arguments: '--no-build --configuration $(buildConfiguration) --output $(Build.ArtifactStagingDirectory)/$(buildConfiguration)'
       zipAfterPublish: true
-
-  - task: AzureWebApp@1
-    displayName: 'Deploy to Azure Web App'
-    inputs:
-      azureSubscription: '$(azureServiceConnection)'
-      appType: 'webApp'
-      appName: '$(webAppName)'
-      package: '$(Build.ArtifactStagingDirectory)/$(buildConfiguration)/*.zip'
-    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
 
   - task: PublishBuildArtifacts@1
     displayName: 'Publish Artifacts'
