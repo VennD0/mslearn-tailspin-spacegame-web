@@ -75,7 +75,7 @@ stages:
     - task: ManualValidation@0
       displayName: 'Approve UAT Testing Results'
       inputs:
-        notifyUsers: 'venn.d.dela.pena@accenture.com' # Update with your actual notification email
+        notifyUsers: 'venn.d.dela.pena@accenture.com'
         instructions: 'Please validate UAT deployment at: https://tailspin-uat-webapp.azurewebsites.net'
         onTimeout: 'reject'
   
@@ -110,7 +110,7 @@ stages:
     - task: ManualValidation@0
       displayName: 'Approve Production Slot Swap'
       inputs:
-        notifyUsers: 'venn.d.dela.pena@accenture.com' # Update with your actual notification email
+        notifyUsers: 'venn.d.dela.pena@accenture.com'
         instructions: 'Please validate staging deployment at: https://tailspin-prod-webapp-staging.azurewebsites.net'
         onTimeout: 'reject'
   
