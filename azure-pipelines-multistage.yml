@@ -68,7 +68,19 @@ stages:
   displayName: 'Deploy to Prod Staging Slot'
   dependsOn: DeployUAT
   jobs:
+  - job: ManualValidationUAT
+    displayName: 'Manual Validation - UAT Testing Complete'
+    pool: server
+    steps:
+    - task: ManualValidation@0
+      displayName: 'Approve UAT Testing Results'
+      inputs:
+        notifyUsers: 'venn.d.dela.pena@accenture.com' # Update with your actual notification email
+        instructions: 'Please validate UAT deployment at: https://tailspin-uat-webapp.azurewebsites.net'
+        onTimeout: 'reject'
+  
   - deployment: DeployProdStaging
+    dependsOn: ManualValidationUAT
     environment: 'Production-Staging'
     pool:
       vmImage: 'ubuntu-latest'
@@ -91,7 +103,19 @@ stages:
   displayName: 'Swap to Production'
   dependsOn: DeployProdStaging
   jobs:
+  - job: ManualValidationStaging
+    displayName: 'Manual Validation - Staging Testing Complete'
+    pool: server
+    steps:
+    - task: ManualValidation@0
+      displayName: 'Approve Production Slot Swap'
+      inputs:
+        notifyUsers: 'venn.d.dela.pena@accenture.com' # Update with your actual notification email
+        instructions: 'Please validate staging deployment at: https://tailspin-prod-webapp-staging.azurewebsites.net'
+        onTimeout: 'reject'
+  
   - deployment: SwapSlots
+    dependsOn: ManualValidationStaging
     environment: 'Production'
     pool:
       vmImage: 'ubuntu-latest'
