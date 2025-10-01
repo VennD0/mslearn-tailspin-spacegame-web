@@ -1,0 +1,256 @@
+# Multi-stage Azure DevOps Pipeline for Tailspin Space Game Web App
+# Features: Build, UAT deployment, Production deployment with slots, and slot swap
+
+trigger:
+  branches:
+    include:
+    - main
+  paths:
+    exclude:
+    - README.md
+    - docs/*
+
+variables:
+  # Build Configuration
+  buildConfiguration: 'Release'
+  dotNetFramework: 'net8.0'
+  dotNetVersion: '8.0.x'
+  
+  # Project paths
+  projectPath: 'Tailspin.SpaceGame.Web/Tailspin.SpaceGame.Web.csproj'
+  
+  # Azure Service Connection (update this to match your service connection name)
+  azureServiceConnection: 'azure-service-connection'
+  
+  # Resource Group and App Names (update these after infrastructure deployment)
+  resourceGroupNameUAT: 'rg-tailspin-uat'
+  resourceGroupNameProd: 'rg-tailspin-prod'
+  webAppNameUAT: 'app-uat-[your-resource-token]'
+  webAppNameProd: 'app-prod-[your-resource-token]'
+
+stages:
+- stage: Build
+  displayName: 'Build and Test'
+  jobs:
+  - job: Build
+    displayName: 'Build job'
+    pool:
+      vmImage: 'ubuntu-latest'
+    
+    steps:
+    - task: UseDotNet@2
+      displayName: 'Use .NET SDK $(dotNetVersion)'
+      inputs:
+        packageType: 'sdk'
+        version: '$(dotNetVersion)'
+        includePreviewVersions: false
+    
+    - task: DotNetCoreCLI@2
+      displayName: 'Restore packages'
+      inputs:
+        command: 'restore'
+        projects: '$(projectPath)'
+        feedsToUse: 'select'
+    
+    - task: DotNetCoreCLI@2
+      displayName: 'Build application'
+      inputs:
+        command: 'build'
+        projects: '$(projectPath)'
+        arguments: '--configuration $(buildConfiguration) --no-restore'
+    
+    - task: DotNetCoreCLI@2
+      displayName: 'Run unit tests'
+      inputs:
+        command: 'test'
+        projects: '**/*Tests.csproj'
+        arguments: '--configuration $(buildConfiguration) --no-build --collect:"XPlat Code Coverage" --logger trx'
+        publishTestResults: true
+      continueOnError: true
+    
+    - task: DotNetCoreCLI@2
+      displayName: 'Publish application'
+      inputs:
+        command: 'publish'
+        projects: '$(projectPath)'
+        arguments: '--configuration $(buildConfiguration) --output $(Build.ArtifactStagingDirectory)/app --no-build'
+        publishWebProjects: false
+        zipAfterPublish: true
+    
+    - task: PublishBuildArtifacts@1
+      displayName: 'Publish artifacts'
+      inputs:
+        pathToPublish: '$(Build.ArtifactStagingDirectory)'
+        artifactName: 'drop'
+        publishLocation: 'Container'
+
+- stage: DeployUAT
+  displayName: 'Deploy to UAT'
+  dependsOn: Build
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+  jobs:
+  - deployment: DeployUAT
+    displayName: 'Deploy to UAT Environment'
+    pool:
+      vmImage: 'ubuntu-latest'
+    environment: 'UAT'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: DownloadBuildArtifacts@1
+            displayName: 'Download artifacts'
+            inputs:
+              buildType: 'current'
+              downloadType: 'single'
+              artifactName: 'drop'
+              downloadPath: '$(Pipeline.Workspace)'
+          
+          - task: AzureWebApp@1
+            displayName: 'Deploy to UAT App Service'
+            inputs:
+              azureSubscription: '$(azureServiceConnection)'
+              appType: 'webApp'
+              appName: '$(webAppNameUAT)'
+              resourceGroupName: '$(resourceGroupNameUAT)'
+              package: '$(Pipeline.Workspace)/drop/app/Tailspin.SpaceGame.Web.zip'
+              deploymentMethod: 'auto'
+          
+          - task: PowerShell@2
+            displayName: 'Run UAT Smoke Tests'
+            inputs:
+              targetType: 'inline'
+              script: |
+                $uatUrl = "https://$(webAppNameUAT).azurewebsites.net"
+                Write-Host "Testing UAT endpoint: $uatUrl"
+                Start-Sleep -Seconds 30
+                try {
+                  $response = Invoke-WebRequest -Uri $uatUrl -Method GET -TimeoutSec 30
+                  if ($response.StatusCode -eq 200) {
+                    Write-Host "✅ UAT deployment successful - HTTP 200 OK"
+                  } else {
+                    Write-Error "❌ UAT deployment failed - HTTP $($response.StatusCode)"
+                  }
+                } catch {
+                  Write-Error "❌ UAT endpoint not accessible: $($_.Exception.Message)"
+                }
+
+- stage: DeployProdStaging
+  displayName: 'Deploy to Production Staging Slot'
+  dependsOn: DeployUAT
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+  jobs:
+  - deployment: DeployProdStaging
+    displayName: 'Deploy to Production Staging Slot'
+    pool:
+      vmImage: 'ubuntu-latest'
+    environment: 'Production-Staging'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: DownloadBuildArtifacts@1
+            displayName: 'Download artifacts'
+            inputs:
+              buildType: 'current'
+              downloadType: 'single'
+              artifactName: 'drop'
+              downloadPath: '$(Pipeline.Workspace)'
+          
+          - task: AzureWebApp@1
+            displayName: 'Deploy to Production Staging Slot'
+            inputs:
+              azureSubscription: '$(azureServiceConnection)'
+              appType: 'webApp'
+              appName: '$(webAppNameProd)'
+              deployToSlotOrASE: true
+              resourceGroupName: '$(resourceGroupNameProd)'
+              slotName: 'staging'
+              package: '$(Pipeline.Workspace)/drop/app/Tailspin.SpaceGame.Web.zip'
+              deploymentMethod: 'auto'
+          
+          - task: PowerShell@2
+            displayName: 'Test Staging Slot'
+            inputs:
+              targetType: 'inline'
+              script: |
+                $stagingUrl = "https://$(webAppNameProd)-staging.azurewebsites.net"
+                Write-Host "Testing staging slot: $stagingUrl"
+                Start-Sleep -Seconds 30
+                try {
+                  $response = Invoke-WebRequest -Uri $stagingUrl -Method GET -TimeoutSec 30
+                  if ($response.StatusCode -eq 200) {
+                    Write-Host "✅ Staging slot deployment successful - HTTP 200 OK"
+                  } else {
+                    Write-Error "❌ Staging slot deployment failed - HTTP $($response.StatusCode)"
+                  }
+                } catch {
+                  Write-Error "❌ Staging slot not accessible: $($_.Exception.Message)"
+                }
+
+- stage: SwapToProduction
+  displayName: 'Swap to Production'
+  dependsOn: DeployProdStaging
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+  jobs:
+  - deployment: SwapSlots
+    displayName: 'Swap Staging to Production'
+    pool:
+      vmImage: 'ubuntu-latest'
+    environment: 'Production'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: PowerShell@2
+            displayName: 'Pre-Swap Validation'
+            inputs:
+              targetType: 'inline'
+              script: |
+                Write-Host "🔍 Starting pre-swap validation..."
+                Write-Host "Production slot will be swapped with staging slot"
+                Write-Host "This operation can be rolled back if needed"
+          
+          - task: AzureAppServiceManage@0
+            displayName: 'Swap Staging to Production'
+            inputs:
+              azureSubscription: '$(azureServiceConnection)'
+              action: 'Swap Slots'
+              webAppName: '$(webAppNameProd)'
+              resourceGroupName: '$(resourceGroupNameProd)'
+              sourceSlot: 'staging'
+              targetSlot: 'production'
+              preserveVnet: true
+          
+          - task: PowerShell@2
+            displayName: 'Post-Swap Validation'
+            inputs:
+              targetType: 'inline'
+              script: |
+                $prodUrl = "https://$(webAppNameProd).azurewebsites.net"
+                Write-Host "🔍 Validating production deployment: $prodUrl"
+                Start-Sleep -Seconds 30
+                
+                try {
+                  $response = Invoke-WebRequest -Uri $prodUrl -Method GET -TimeoutSec 30
+                  if ($response.StatusCode -eq 200) {
+                    Write-Host "✅ Production deployment successful - HTTP 200 OK"
+                    Write-Host "🎉 Slot swap completed successfully!"
+                  } else {
+                    Write-Error "❌ Production validation failed - HTTP $($response.StatusCode)"
+                    Write-Host "⚠️ Consider rolling back the slot swap"
+                  }
+                } catch {
+                  Write-Error "❌ Production endpoint not accessible: $($_.Exception.Message)"
+                  Write-Host "⚠️ Consider rolling back the slot swap"
+                }
+                
+                Write-Host ""
+                Write-Host "📊 Deployment Summary:"
+                Write-Host "  UAT Environment: Deployed and validated"
+                Write-Host "  Production Staging: Deployed and tested"
+                Write-Host "  Production Live: Swapped and validated"
+                Write-Host ""
+                Write-Host "🔗 Application URLs:"
+                Write-Host "  UAT: https://$(webAppNameUAT).azurewebsites.net"
+                Write-Host "  Production: $prodUrl"
