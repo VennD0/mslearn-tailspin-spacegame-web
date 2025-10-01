@@ -6,8 +6,8 @@ trigger:
 
 variables:
   buildConfiguration: 'Release'
-  # Try with a new service connection name
-  azureServiceConnection: 'tailspin-azure-connection'
+  # Use a completely new service connection name
+  azureServiceConnection: 'tailspin-demo-connection'
   uatWebAppName: 'tailspin-uat-webapp'
   prodWebAppName: 'tailspin-prod-webapp'
   resourceGroupName: 'rg-tailspin-demo'
