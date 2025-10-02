@@ -1,0 +1,157 @@
+# UseCase3: Docker + AKS DevOps Pipeline (FIXED VERSION)
+# This version uses flexible file patterns to handle Azure DevOps file structure
+
+trigger:
+- main
+- usecase3-docker-aks
+
+variables:
+  buildConfiguration: 'Release'
+  dockerRegistryServiceConnection: 'tailspin-acr-connection'
+  imageRepository: 'tailspin/spacegame-web'
+  containerRegistry: 'tailspinacr2025.azurecr.io'
+  dockerfilePath: 'Dockerfile'
+  tag: '$(Build.BuildId)'
+  k8sNamespace: 'tailspin'
+  aksServiceConnection: 'tailspin-aks-connection'
+
+stages:
+- stage: 'Build'
+  displayName: 'Build and Push Container Image'
+  jobs:
+  - job: 'Build'
+    displayName: 'Build Docker Image'
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+    - task: UseDotNet@2
+      displayName: 'Use .NET SDK 8.x'
+      inputs:
+        packageType: 'sdk'
+        version: '8.x'
+
+    # CRITICAL DEBUG STEP - Shows actual file structure
+    - task: PowerShell@2
+      displayName: 'Debug: Show repository structure'
+      inputs:
+        targetType: 'inline'
+        script: |
+          Write-Host "=== Repository Root Contents ==="
+          Get-ChildItem | Format-Table Name, Length -AutoSize
+          Write-Host ""
+          Write-Host "=== All .csproj files found ==="
+          $csprojFiles = Get-ChildItem -Recurse -Filter "*.csproj"
+          if ($csprojFiles) {
+            $csprojFiles | ForEach-Object { Write-Host "Found: $($_.FullName)" }
+          } else {
+            Write-Host "ERROR: No .csproj files found!"
+          }
+          Write-Host ""
+          Write-Host "=== All .sln files found ==="
+          $slnFiles = Get-ChildItem -Recurse -Filter "*.sln"
+          if ($slnFiles) {
+            $slnFiles | ForEach-Object { Write-Host "Found: $($_.FullName)" }
+          } else {
+            Write-Host "No .sln files found"
+          }
+          Write-Host ""
+          Write-Host "=== Directory tree (first 3 levels) ==="
+          Get-ChildItem -Recurse -Depth 2 | Where-Object { $_.PSIsContainer } | ForEach-Object { Write-Host "DIR: $($_.FullName)" }
+
+    # FLEXIBLE RESTORE - Multiple patterns to catch different structures
+    - task: DotNetCoreCLI@2
+      displayName: 'Restore dependencies (Pattern 1: **/Tailspin.SpaceGame.Web.csproj)'
+      inputs:
+        command: 'restore'
+        projects: '**/Tailspin.SpaceGame.Web.csproj'
+        feedsToUse: 'select'
+      continueOnError: true
+
+    - task: DotNetCoreCLI@2
+      displayName: 'Restore dependencies (Pattern 2: **/*.csproj)'
+      inputs:
+        command: 'restore'
+        projects: '**/*.csproj'
+        feedsToUse: 'select'
+      condition: failed()
+      continueOnError: true
+
+    - task: DotNetCoreCLI@2
+      displayName: 'Restore dependencies (Pattern 3: Tailspin.SpaceGame.Web.sln)'
+      inputs:
+        command: 'restore'
+        projects: '**/Tailspin.SpaceGame.Web.sln'
+        feedsToUse: 'select'
+      condition: failed()
+
+    # FLEXIBLE BUILD - Multiple patterns
+    - task: DotNetCoreCLI@2
+      displayName: 'Build application'
+      inputs:
+        command: 'build'
+        arguments: '--no-restore --configuration $(buildConfiguration)'
+        projects: |
+          **/Tailspin.SpaceGame.Web.csproj
+          **/*.csproj
+
+    - task: DotNetCoreCLI@2
+      displayName: 'Publish application'
+      inputs:
+        command: 'publish'
+        arguments: '--no-build --configuration $(buildConfiguration) --output $(Build.ArtifactStagingDirectory)/publish'
+        projects: '**/Tailspin.SpaceGame.Web.csproj'
+        publishWebProjects: false
+        zipAfterPublish: false
+
+    - task: Docker@2
+      displayName: 'Build Docker image'
+      inputs:
+        containerRegistry: '$(dockerRegistryServiceConnection)'
+        repository: '$(imageRepository)'
+        command: 'build'
+        Dockerfile: '$(dockerfilePath)'
+        tags: |
+          $(tag)
+          latest
+
+    - task: Docker@2
+      displayName: 'Push Docker image to ACR'
+      inputs:
+        containerRegistry: '$(dockerRegistryServiceConnection)'
+        repository: '$(imageRepository)'
+        command: 'push'
+        tags: |
+          $(tag)
+          latest
+
+- stage: 'Deploy'
+  displayName: 'Deploy to AKS'
+  dependsOn: 'Build'
+  jobs:
+  - deployment: 'DeployToAKS'
+    displayName: 'Deploy to AKS'
+    pool:
+      vmImage: 'ubuntu-latest'
+    environment: 'production'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: KubernetesManifest@0
+            displayName: 'Create namespace'
+            inputs:
+              action: 'deploy'
+              kubernetesServiceConnection: '$(aksServiceConnection)'
+              manifests: 'k8s/namespace.yaml'
+
+          - task: KubernetesManifest@0
+            displayName: 'Deploy to AKS'
+            inputs:
+              action: 'deploy'
+              kubernetesServiceConnection: '$(aksServiceConnection)'
+              namespace: '$(k8sNamespace)'
+              manifests: |
+                k8s/deployment.yaml
+                k8s/service.yaml
+                k8s/ingress.yaml
+              containers: '$(containerRegistry)/$(imageRepository):$(tag)'

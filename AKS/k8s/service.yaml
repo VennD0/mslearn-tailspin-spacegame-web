@@ -1,0 +1,24 @@
+# Kubernetes Service for Tailspin SpaceGame Web Application
+# Provides stable network endpoint for the application
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: tailspin-spacegame-web-service
+  namespace: tailspin
+  labels:
+    app: spacegame-web
+    component: frontend
+  annotations:
+    description: "Service for Tailspin SpaceGame web application"
+    service.beta.kubernetes.io/azure-load-balancer-internal: "false"
+spec:
+  type: LoadBalancer
+  ports:
+  - port: 80
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  selector:
+    app: spacegame-web
+  sessionAffinity: None

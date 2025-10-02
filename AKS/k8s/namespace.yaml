@@ -1,0 +1,14 @@
+# Kubernetes Namespace for Tailspin SpaceGame Application
+# Provides isolation and resource organization
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tailspin
+  labels:
+    name: tailspin
+    environment: production
+    app: spacegame-web
+  annotations:
+    description: "Namespace for Tailspin SpaceGame web application"
+    managed-by: "azure-devops"
