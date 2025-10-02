@@ -8,7 +8,7 @@ variables:
   buildConfiguration: 'Release'
   dockerRegistryServiceConnection: 'tailspin-acr-connection'
   imageRepository: 'tailspin/spacegame-web'
-  containerRegistry: '#{ACR_NAME}#.azurecr.io'
+  containerRegistry: 'tailspinacr2025.azurecr.io'
   dockerfilePath: 'Dockerfile'
   tag: '$(Build.BuildId)'
   k8sNamespace: 'tailspin'

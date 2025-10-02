@@ -36,7 +36,7 @@ spec:
     spec:
       containers:
       - name: spacegame-web
-        image: #{ACR_NAME}#.azurecr.io/tailspin/spacegame-web:#{BUILD_BUILDID}#
+        image: tailspinacr2025.azurecr.io/tailspin/spacegame-web:#{BUILD_BUILDID}#
         imagePullPolicy: Always
         ports:
         - containerPort: 8080
