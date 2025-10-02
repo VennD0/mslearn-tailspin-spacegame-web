@@ -1,0 +1,33 @@
+# Kubernetes Ingress for Tailspin SpaceGame Web Application
+# Provides HTTP(S) routing and SSL termination (optional)
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: tailspin-spacegame-web-ingress
+  namespace: tailspin
+  labels:
+    app: spacegame-web
+  annotations:
+    description: "Ingress for Tailspin SpaceGame web application"
+    kubernetes.io/ingress.class: "azure/application-gateway"
+    # Uncomment for SSL:
+    # cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    # nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  rules:
+  - host: tailspin-spacegame.example.com  # Replace with your domain
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: tailspin-spacegame-web-service
+            port:
+              number: 80
+  # Uncomment for SSL:
+  # tls:
+  # - hosts:
+  #   - tailspin-spacegame.example.com
+  #   secretName: tailspin-spacegame-tls
