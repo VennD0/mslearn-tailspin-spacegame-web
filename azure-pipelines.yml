@@ -1,49 +1,138 @@
-# UseCase1: Classic ARM DevOps Pipeline
-# Simple Build -> Publish Artifacts pattern (no Azure deployment)
+# UseCase3: Docker + AKS DevOps Pipeline
+# Build → Containerize → Deploy to Azure Kubernetes Service
 
 trigger:
-- main
+- usecase3-docker-aks
 
 variables:
   buildConfiguration: 'Release'
+  dockerRegistryServiceConnection: 'tailspin-acr-connection'
+  imageRepository: 'tailspin/spacegame-web'
+  containerRegistry: '#{ACR_NAME}#.azurecr.io'
+  dockerfilePath: 'Dockerfile'
+  tag: '$(Build.BuildId)'
+  k8sNamespace: 'tailspin'
+  aksServiceConnection: 'tailspin-aks-connection'
 
-jobs:
-- job: 'Build'
-  displayName: 'Build the web application'
-  pool:
-    vmImage: 'ubuntu-latest'
-  variables:
-    dotnetSdkVersion: '8.x'
-  steps:
-  - task: UseDotNet@2
-    displayName: 'Use .NET SDK $(dotnetSdkVersion)'
-    inputs:
-      packageType: 'sdk'
-      version: '$(dotnetSdkVersion)'
+stages:
+- stage: 'Build'
+  displayName: 'Build and Push Container Image'
+  jobs:
+  - job: 'Build'
+    displayName: 'Build Docker Image'
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+    - task: UseDotNet@2
+      displayName: 'Use .NET SDK 8.x'
+      inputs:
+        packageType: 'sdk'
+        version: '8.x'
 
-  - task: DotNetCoreCLI@2
-    displayName: 'Restore project dependencies'
-    inputs:
-      command: 'restore'
-      projects: 'Tailspin.SpaceGame.Web/Tailspin.SpaceGame.Web.csproj'
+    - task: DotNetCoreCLI@2
+      displayName: 'Restore dependencies'
+      inputs:
+        command: 'restore'
+        projects: 'Tailspin.SpaceGame.Web/Tailspin.SpaceGame.Web.csproj'
 
-  - task: DotNetCoreCLI@2
-    displayName: 'Build the project - $(buildConfiguration)'
-    inputs:
-      command: 'build'
-      arguments: '--no-restore --configuration $(buildConfiguration)'
-      projects: 'Tailspin.SpaceGame.Web/Tailspin.SpaceGame.Web.csproj'
+    - task: DotNetCoreCLI@2
+      displayName: 'Build application'
+      inputs:
+        command: 'build'
+        arguments: '--no-restore --configuration $(buildConfiguration)'
+        projects: 'Tailspin.SpaceGame.Web/Tailspin.SpaceGame.Web.csproj'
 
-  - task: DotNetCoreCLI@2
-    displayName: 'Publish the project - $(buildConfiguration)'
-    inputs:
-      command: 'publish'
-      projects: 'Tailspin.SpaceGame.Web/Tailspin.SpaceGame.Web.csproj'
-      arguments: '--no-build --configuration $(buildConfiguration) --output $(Build.ArtifactStagingDirectory)/$(buildConfiguration)'
-      zipAfterPublish: true
+    - task: DotNetCoreCLI@2
+      displayName: 'Run unit tests'
+      inputs:
+        command: 'test'
+        arguments: '--no-build --configuration $(buildConfiguration) --collect:"XPlat Code Coverage"'
+        projects: '**/*Tests.csproj'
+        publishTestResults: true
+      continueOnError: true
 
-  - task: PublishBuildArtifacts@1
-    displayName: 'Publish Artifacts'
-    inputs:
-      pathToPublish: '$(Build.ArtifactStagingDirectory)'
-      artifactName: 'drop'
+    - task: Docker@2
+      displayName: 'Build Docker image'
+      inputs:
+        containerRegistry: '$(dockerRegistryServiceConnection)'
+        repository: '$(imageRepository)'
+        command: 'build'
+        Dockerfile: '$(dockerfilePath)'
+        tags: |
+          $(tag)
+          latest
+
+    - task: Docker@2
+      displayName: 'Push Docker image to ACR'
+      inputs:
+        containerRegistry: '$(dockerRegistryServiceConnection)'
+        repository: '$(imageRepository)'
+        command: 'push'
+        tags: |
+          $(tag)
+          latest
+
+- stage: 'Deploy'
+  displayName: 'Deploy to AKS'
+  dependsOn: Build
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/usecase3-docker-aks'))
+  jobs:
+  - deployment: Deploy
+    displayName: 'Deploy to AKS cluster'
+    pool:
+      vmImage: 'ubuntu-latest'
+    environment: 'AKS-Production'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - checkout: self
+
+          - task: KubernetesManifest@0
+            displayName: 'Create/Update namespace'
+            inputs:
+              action: 'deploy'
+              kubernetesServiceConnection: '$(aksServiceConnection)'
+              namespace: '$(k8sNamespace)'
+              manifests: 'k8s/namespace.yaml'
+
+          - task: KubernetesManifest@0
+            displayName: 'Deploy application to AKS'
+            inputs:
+              action: 'deploy'
+              kubernetesServiceConnection: '$(aksServiceConnection)'
+              namespace: '$(k8sNamespace)'
+              manifests: |
+                k8s/deployment.yaml
+                k8s/service.yaml
+              containers: '$(containerRegistry)/$(imageRepository):$(tag)'
+
+          - task: Kubernetes@1
+            displayName: 'Get service details'
+            inputs:
+              connectionType: 'Kubernetes Service Connection'
+              kubernetesServiceEndpoint: '$(aksServiceConnection)'
+              namespace: '$(k8sNamespace)'
+              command: 'get'
+              arguments: 'service tailspin-spacegame-web-service -o wide'
+              outputFormat: 'none'
+
+          - task: PowerShell@2
+            displayName: 'Display deployment information'
+            inputs:
+              targetType: 'inline'
+              script: |
+                Write-Host "🎉 Deployment completed successfully!"
+                Write-Host ""
+                Write-Host "📋 Deployment Details:"
+                Write-Host "  • Application: Tailspin SpaceGame Web"
+                Write-Host "  • Container Image: $(containerRegistry)/$(imageRepository):$(tag)"
+                Write-Host "  • Kubernetes Namespace: $(k8sNamespace)"
+                Write-Host "  • Build ID: $(Build.BuildId)"
+                Write-Host ""
+                Write-Host "🔍 To check deployment status:"
+                Write-Host "  kubectl get pods -n $(k8sNamespace)"
+                Write-Host "  kubectl get services -n $(k8sNamespace)"
+                Write-Host ""
+                Write-Host "🌐 To get external IP (may take a few minutes):"
+                Write-Host "  kubectl get service tailspin-spacegame-web-service -n $(k8sNamespace)"

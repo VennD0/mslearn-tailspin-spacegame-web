@@ -1,0 +1,96 @@
+# .dockerignore for Tailspin SpaceGame Web Application
+# Exclude files and folders that shouldn't be copied to Docker context
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Documentation
+*.md
+LICENSE*
+
+# Visual Studio / VS Code
+.vs/
+.vscode/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Build results
+**/bin/
+**/obj/
+**/out/
+**/TestResults/
+
+# Package managers
+**/node_modules/
+**/npm-debug.log*
+**/yarn-debug.log*
+**/yarn-error.log*
+
+# Azure DevOps
+azure-pipelines*.yml
+.azure/
+
+# Docker
+Dockerfile*
+.dockerignore
+
+# Kubernetes
+k8s/
+*.yaml
+*.yml
+
+# PowerShell scripts
+*.ps1
+
+# Temporary files
+**/*.tmp
+**/*.temp
+**/.tmp/
+**/.temp/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Environment files
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+
+# Logs
+logs/
+*.log
+
+# Runtime data
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage/
+
+# Azure Functions
+local.settings.json
+
+# Rider
+.idea/
+*.sln.iml
+
+# User-specific files
+*.rsuser
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
