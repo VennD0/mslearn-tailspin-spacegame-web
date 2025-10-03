@@ -80,13 +80,13 @@ stages:
           
           # Commented out the actual deployment task due to service connection issues
           # This would normally deploy to tailspin-uat-webapp.azurewebsites.net
-          # - task: AzureWebApp@1
-          #   displayName: 'Azure App Service Deploy: UAT Website'
-          #   inputs:
-          #     azureSubscription: '$(azureServiceConnection)'
-          #     appType: 'webApp'
-          #     appName: 'tailspin-uat-webapp'
-          #     package: '$(Pipeline.Workspace)/drop/$(buildConfiguration)/*.zip'
+          - task: AzureWebApp@1
+            displayName: 'Azure App Service Deploy: UAT Website'
+            inputs:
+              azureSubscription: '$(azureServiceConnection)'
+              appType: 'webApp'
+              appName: 'tailspin-uat-webapp'
+              package: '$(Pipeline.Workspace)/drop/$(buildConfiguration)/*.zip'
 
 - stage: 'Test'
   displayName: 'Deploy to the test environment'
@@ -111,13 +111,13 @@ stages:
           
           # Commented out the actual deployment task due to service connection issues
           # This would normally deploy to a test App Service
-          # - task: AzureWebApp@1
-          #   displayName: 'Azure App Service Deploy: Test Website'
-          #   inputs:
-          #     azureSubscription: '$(azureServiceConnection)'
-          #     appType: 'webApp'
-          #     appName: 'tailspin-test-webapp'  # You would create this App Service
-          #     package: '$(Pipeline.Workspace)/drop/$(buildConfiguration)/*.zip'
+          - task: AzureWebApp@1
+            displayName: 'Azure App Service Deploy: Test Website'
+            inputs:
+              azureSubscription: '$(azureServiceConnection)'
+              appType: 'webApp'
+              appName: 'tailspin-test-webapp'  # You would create this App Service
+              package: '$(Pipeline.Workspace)/drop/$(buildConfiguration)/*.zip'
 
 - stage: 'Staging'
   displayName: 'Deploy to the staging environment'
@@ -140,13 +140,13 @@ stages:
           
           # Commented out the actual deployment task due to service connection issues
           # This would deploy to the production staging slot
-          # - task: AzureWebApp@1
-          #   displayName: 'Azure App Service Deploy: Production Staging Slot'
-          #   inputs:
-          #     azureSubscription: '$(azureServiceConnection)'
-          #     appType: 'webApp'
-          #     appName: 'tailspin-prod-webapp'
-          #     deployToSlotOrASE: true
-          #     resourceGroupName: 'rg-tailspin-demo'
-          #     slotName: 'staging'
-          #     package: '$(Pipeline.Workspace)/drop/$(buildConfiguration)/*.zip'
+          - task: AzureWebApp@1
+            displayName: 'Azure App Service Deploy: Production Staging Slot'
+            inputs:
+              azureSubscription: '$(azureServiceConnection)'
+              appType: 'webApp'
+              appName: 'tailspin-prod-webapp'
+              deployToSlotOrASE: true
+              resourceGroupName: 'rg-tailspin-demo'
+              slotName: 'staging'
+              package: '$(Pipeline.Workspace)/drop/$(buildConfiguration)/*.zip'
